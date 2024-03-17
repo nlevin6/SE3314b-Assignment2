@@ -1,116 +1,90 @@
 const net = require('net');
-const { parse } = require('yargs');
+const {parse} = require('yargs');
+const crypto = require('crypto');
 const Singleton = require('./Singleton.js');
-
-// Define constants
-const K_BUCKET_SIZE = 1;
-const K_BUCKET_COUNT = 32;
-
-// Function to parse command-line arguments
-function parseCommandLineArgs() {
-    return parse();
-}
 
 // Function to generate peer ID using shake256 hash function
 function getPeerID(ip, port) {
-    return Singleton.getPeerID(ip, port);
+    const inputString = `${ip}:${port}`;
+    const hash = crypto.createHash('shake256');
+    hash.update(inputString);
+    const hashBuffer = hash.digest();
+    const peerID = hashBuffer.readUInt32LE(0);
+    return peerID.toString(16).padStart(8, '0');
 }
 
-// Function to connect to the known peer
-function connectToKnownPeer(peerIP, peerPort) {
+// Function to connect to the known peer (server)
+function connectToServer(serverIP, serverPort, clientID) {
     const client = new net.Socket();
-
-    client.connect(peerPort, peerIP, () => {
-        console.log('Connected to known peer.');
+    client.connect(serverPort, serverIP, () => {
+        console.log(`Connected to peer1:${serverPort} at timestamp: ${Singleton.getTimestamp()}`);
         const address = client.address();
-        const peerID = getPeerID(address.address, address.port);
         console.log(`Assigned ephemeral source port: ${address.port}`);
         console.log(`Current host IPv4 address: ${address.address}`);
-        console.log(`Generated DHT peerID: ${peerID}`);
+        console.log(`Generated client ID: ${clientID}`);
+        sendHello(client);
     });
 
-    // Event handler for data received from the known peer
+    client.on('connect', () => {
+        console.log('Connection established with the server.');
+    });
+
     client.on('data', (data) => {
         const message = data.toString();
-        console.log('Received message from known peer:', message);
-        // Implement message processing logic here
+        console.log('Received message from server:', message);
+        processServerMessage(message);
     });
 
-    // Event handler for connection closed
+
     client.on('close', () => {
-        console.log('Connection with known peer closed.');
+        console.log('Connection with server closed.');
     });
 
-    // Event handler for connection error
     client.on('error', (err) => {
-        console.error('Error with known peer connection:', err);
+        console.error('Error with server connection:', err);
     });
 }
 
-// Function to refresh the DHT table with a list of peers' information
-function refreshBuckets(dhtTable, peersInfoList) {
-    // Iterate through the list of peers' information
-    for (const peerInfo of peersInfoList) {
-        // Attempt to add each peer to the appropriate k-bucket of the DHT table
-        pushBucket(dhtTable, peerInfo);
-    }
 
-    // Print the current DHT table
-    console.log('Updated DHT table:');
-    console.log(dhtTable);
+// Function to send a hello message to the server
+function sendHello(client) {
+    // Construct the hello message packet
+    const helloMessage = {
+        messageType: 1,
+        serverID: 'sampleServerID',
+        dht: 'sampleDHT'
+    };
+    client.write(JSON.stringify(helloMessage));
 }
 
-// Function to send a hello message to every peer in the DHT table
-function sendHello(dhtTable) {
-    // Iterate through the k-buckets of the DHT table
-    for (const bucket of dhtTable) {
-        // Iterate through the peers in the current k-bucket
-        for (const peer of bucket) {
-            // Create a TCP socket to connect to the peer
-            const client = new net.Socket();
-
-            // Connect to the peer
-            client.connect(peer.port, peer.ip, () => {
-                console.log('Connected to peer for sending hello message:', peer.name);
-
-                // Construct the hello message packet
-                const helloMessage = {
-                    messageType: 2, // 2 means Hello
-                    knownPeers: dhtTable.flat() // Include information about all known peers
-                };
-
-                // Send the hello message to the peer
-                client.write(JSON.stringify(helloMessage));
-            });
-
-            // Event handler for connection closed
-            client.on('close', () => {
-                console.log('Connection with peer closed after sending hello message:', peer.name);
-            });
-
-            // Event handler for connection error
-            client.on('error', (err) => {
-                console.error('Error with peer connection while sending hello message:', err);
-            });
-        }
+// Function to process server messages
+function processServerMessage(message) {
+    const parsedMessage = JSON.parse(message);
+    switch (parsedMessage.messageType) {
+        case 1: // Welcome message
+            console.log(`Received Welcome Message from server ${parsedMessage.serverID} along with DHT:`);
+            console.log(parsedMessage.dht);
+            break;
+        case 2: // DHT update
+            console.log(`Received DHT Update from server ${parsedMessage.serverID}:`);
+            console.log(parsedMessage.update);
+            break;
+        default:
+            console.log('Unknown message type received.');
     }
 }
-
 
 // Function to initialize the client
 function initializeClient() {
-    // Parse command-line arguments
-    const argv = parseCommandLineArgs();
-
-    // Extract known peer's IP address and port number from command-line arguments
-    const peerArg = argv.p;
-    if (peerArg) {
-        const [peerIP, peerPort] = peerArg.split(':');
-        connectToKnownPeer(peerIP, peerPort);
+    const argv = parse();
+    const serverArg = argv.p;
+    if (serverArg) {
+        const [serverIP, serverPort] = serverArg.split(':');
+        const clientID = getPeerID();
+        connectToServer(serverIP, serverPort, clientID);
     } else {
-        console.error('Error: -p option with known peer IP address and port number is required.');
+        console.error('Error: -p option with server IP address and port number is required.');
     }
 }
 
-// Start the client
 initializeClient();
