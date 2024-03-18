@@ -9,8 +9,11 @@ const K_BUCKET_COUNT = 32;
 
 // Function to calculate the common prefix length between two IDs
 function calculateCommonPrefixLength(id1, id2) {
+    //console.log("ID1:", id1);
+    //console.log("ID2:", id2);
     const binaryId1 = Singleton.Hex2Bin(id1);
     const binaryId2 = Singleton.Hex2Bin(id2);
+
 
     let commonPrefixLength = 0;
 
@@ -26,12 +29,13 @@ function calculateCommonPrefixLength(id1, id2) {
 
 // Function to push a peer into the appropriate k-bucket of the DHT table
 function pushBucket(dhtTable, peer) {
-    const ownerID = dhtTable.ownerID;
+    const ownerID = getServerID('127.0.0.1', 4897);
     const bucketIndex = calculateCommonPrefixLength(ownerID, peer.id);
 
     if (dhtTable[bucketIndex].length < K_BUCKET_SIZE) {
         dhtTable[bucketIndex].push(peer);
-        console.log(`Peer ${peer.name} added to bucket ${bucketIndex}.`);
+        console.log(`\nConnected from peer ${peer.ip}:${peer.port}\n`);
+        console.log(`Bucket P${bucketIndex} has no value, adding ${peer.id} `);
     } else {
         const existingPeer = dhtTable[bucketIndex][0];
         const distanceToPeer = Singleton.XORing(peer.id, ownerID);
@@ -43,7 +47,42 @@ function pushBucket(dhtTable, peer) {
             console.log(`Peer ${existingPeer.name} kept in bucket ${bucketIndex} because it is closer to owner.`);
         }
     }
+
+    console.log('\nMy DHT:');
+    console.log(formatDHTTable(dhtTable));
+
+    // Log the hello message after printing DHT
+    console.log(`\nReceived Hello Message from ${peer.id} along with DHT:`);
+    console.log(peer.dht);
+
+    const dhtUpdateMessage = {
+        messageType: 2,
+        senderName: 'Server',
+        update: dhtTable[bucketIndex]
+    };
+
+    // Convert the message to JSON string and send it to all clients
+    const dhtUpdateMessageString = JSON.stringify(dhtUpdateMessage);
+    clients.forEach(client => {
+        client.write(dhtUpdateMessageString);
+    });
 }
+
+
+// Function to format DHT table entries
+function formatDHTTable(dhtTable) {
+    const formattedEntries = [];
+    for (let i = 0; i < dhtTable.length; i++) {
+        const bucket = dhtTable[i];
+        for (let j = 0; j < bucket.length; j++) {
+            const peer = bucket[j];
+            const formattedEntry = `[P${i}, ${peer.ip}:${peer.port}, ${peer.id}]`;
+            formattedEntries.push(formattedEntry);
+        }
+    }
+    return formattedEntries.join(", ");
+}
+
 
 
 function getServerID(ip, port) {
@@ -59,14 +98,14 @@ function getServerID(ip, port) {
 function handleClientJoining(socket, dhtTable) {
     socket.once('data', (data) => {
         const message = data.toString();
-        console.log('Received message from joining peer:', message);
         const parsedMessage = JSON.parse(message);
+
         const welcomeMessage = {
             V: 9,
             messageType: 1,
             numberOfPeers: dhtTable.length,
             senderNameLength: 0,
-            senderName: '',
+            senderName: getServerID('127.0.0.1', 4897),
             peerTable: dhtTable
         };
 
@@ -75,10 +114,9 @@ function handleClientJoining(socket, dhtTable) {
         const peerInfo = {
             ip: socket.remoteAddress,
             port: socket.remotePort,
-            id: parsedMessage.peerID
+            id: parsedMessage.clientID
         };
         pushBucket(dhtTable, peerInfo);
-        console.log('Updated DHT table after adding the joining peer:', dhtTable);
         socket.end();
     });
     socket.on('close', () => {
@@ -89,18 +127,16 @@ function handleClientJoining(socket, dhtTable) {
     });
 }
 
+const clients = [];
+
 // Function to initialize the server
 function initializeServer(peerName) {
     const serverID = getServerID('127.0.0.1', 4897);
-    const dhtTable = {
-        ownerID: serverID,
-        buckets: Array.from({length: K_BUCKET_COUNT}, () => [])
-    };
+    const dhtTable = Array.from({length: K_BUCKET_COUNT}, () => []);
     const server = net.createServer();
 
     server.on('connection', (socket) => {
-        console.log('New connection established.');
-
+        clients.push(socket);
         handleClientJoining(socket, dhtTable);
     });
 
@@ -114,7 +150,8 @@ function initializeServer(peerName) {
         console.error('Server error:', err);
     });
 
-    server.listen(0, '127.0.0.1', () => {});
+    server.listen(0, '127.0.0.1', () => {
+    });
 
 }
 
