@@ -1,7 +1,7 @@
 const net = require('net');
 const {parse} = require('yargs');
 const Singleton = require('./Singleton.js');
-const crypto = require('crypto');
+const { getServerID } = require('./Singleton.js');
 
 const argv = parse(process.argv.slice(2));
 const K_BUCKET_SIZE = 1;
@@ -9,8 +9,8 @@ const K_BUCKET_COUNT = 32;
 
 // Function to calculate the common prefix length between two IDs
 function calculateCommonPrefixLength(id1, id2) {
-    //console.log("ID1:", id1);
-    //console.log("ID2:", id2);
+    console.log("ID1:", id1);
+    console.log("ID2:", id2);
     const binaryId1 = Singleton.Hex2Bin(id1);
     const binaryId2 = Singleton.Hex2Bin(id2);
 
@@ -27,7 +27,8 @@ function calculateCommonPrefixLength(id1, id2) {
     return commonPrefixLength;
 }
 
-// Function to push a peer into the appropriate k-bucket of the DHT table
+
+
 function pushBucket(dhtTable, peer) {
     const ownerID = getServerID('127.0.0.1', 4897);
     const bucketIndex = calculateCommonPrefixLength(ownerID, peer.id);
@@ -51,23 +52,13 @@ function pushBucket(dhtTable, peer) {
     console.log('\nMy DHT:');
     console.log(formatDHTTable(dhtTable));
 
-    // Log the hello message after printing DHT
-    console.log(`\nReceived Hello Message from ${peer.id} along with DHT:`);
-    console.log(peer.dht);
-
-    const dhtUpdateMessage = {
-        messageType: 2,
-        senderName: 'Server',
-        update: dhtTable[bucketIndex]
-    };
-
-    // Convert the message to JSON string and send it to all clients
-    const dhtUpdateMessageString = JSON.stringify(dhtUpdateMessage);
-    clients.forEach(client => {
-        client.write(dhtUpdateMessageString);
-    });
+    // Return the bucket index and peer information
+    return { bucketIndex, ...peer };
 }
 
+module.exports = {
+    pushBucket
+};
 
 // Function to format DHT table entries
 function formatDHTTable(dhtTable) {
@@ -83,40 +74,48 @@ function formatDHTTable(dhtTable) {
     return formattedEntries.join(", ");
 }
 
-
-
-function getServerID(ip, port) {
-    const inputString = `${ip}:${port}`;
-    const hash = crypto.createHash('shake256');
-    hash.update(inputString);
-    const hashBuffer = hash.digest();
-    const serverID = hashBuffer.readUInt32LE(0);
-    return serverID.toString(16).padStart(8, '0');
-}
-
-// Function to handle a joining peer
 function handleClientJoining(socket, dhtTable) {
     socket.once('data', (data) => {
         const message = data.toString();
         const parsedMessage = JSON.parse(message);
-
+        const serverID = getServerID('127.0.0.1', 4897);
+        const bucketIndex = calculateCommonPrefixLength(serverID, parsedMessage.clientID);
         const welcomeMessage = {
             V: 9,
             messageType: 1,
             numberOfPeers: dhtTable.length,
             senderNameLength: 0,
-            senderName: getServerID('127.0.0.1', 4897),
-            peerTable: dhtTable
+            senderName: serverID,
+            peerTable: dhtTable,
+            bucketIndex: bucketIndex
         };
 
         socket.write(JSON.stringify(welcomeMessage));
 
-        const peerInfo = {
+        // Push the joining peer into the correct bucket
+        const peerInfo = pushBucket(dhtTable, {
             ip: socket.remoteAddress,
             port: socket.remotePort,
             id: parsedMessage.clientID
+        }, bucketIndex);
+
+        // Access the bucket index and peer ID from peerInfo and send it to the client
+        // Send the DHT update message with the correct messageType
+        const dhtUpdateMessage = {
+            messageType: 2,
+            senderName: serverID,
+            update: {
+                bucketIndex: peerInfo.bucketIndex,
+                peerInfo: {
+                    ip: '127.0.0.1',
+                    port: 4897,
+                    id: serverID
+                }
+            }
         };
-        pushBucket(dhtTable, peerInfo);
+
+        socket.write(JSON.stringify(dhtUpdateMessage));
+
         socket.end();
     });
     socket.on('close', () => {
@@ -126,6 +125,11 @@ function handleClientJoining(socket, dhtTable) {
         console.error('Error with joining peer connection:', err);
     });
 }
+
+
+
+
+
 
 const clients = [];
 
