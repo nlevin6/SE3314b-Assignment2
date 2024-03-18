@@ -104,6 +104,7 @@ function formatDHTTable(dhtTable) {
 
 function refreshBuckets(dhtTable, peerID) {
     console.log("peerID in refresh buckets: " + peerID);
+    console.log("dht table in refresh buckets: "+dhtTable);
     pushBucket(dhtTable, peerID);
     console.log('\nRefresh k-Bucket operation is performed.');
     console.log(dhtTable);
