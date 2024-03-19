@@ -7,7 +7,7 @@ const {pushBucket} = require('./KADpeer.js');
 const K_BUCKET_SIZE = 1;
 const K_BUCKET_COUNT = 32;
 
-// Function to generate peer ID using shake256 hash function
+// Function to generate peer ID
 function getPeerID(ip, port) {
     const inputString = `${ip}:${port}`;
     const hash = crypto.createHash('shake256');
@@ -15,6 +15,20 @@ function getPeerID(ip, port) {
     const hashBuffer = hash.digest();
     const peerID = hashBuffer.readUInt32LE(0);
     return peerID.toString(16).padStart(8, '0');
+}
+
+function getRandomPort() {
+    const server = net.createServer();
+    server.unref(); // Allow the program to exit even if the server is listening
+    return new Promise((resolve, reject) => {
+        server.on('error', reject);
+        server.listen(0, () => {
+            const port = server.address().port;
+            server.close(() => {
+                resolve(port);
+            });
+        });
+    });
 }
 
 // Function to connect to the known peer (server)
@@ -46,16 +60,18 @@ function connectToServer(serverIP, serverPort, clientID, dhtTable, argv) {
 }
 
 // Function to send a hello message to the server
-function sendHello(client, dhtTable, peerName) {
+async function sendHello(client, dhtTable, peerName) {
+    const randomPort = await getRandomPort();
     const helloMessage = {
         messageType: 2,
-        clientID: getPeerID('127.0.0.1', 5000),
+        clientID: getPeerID('127.0.0.1', randomPort),
         peerName: peerName,
         dht: dhtTable
     };
     client.write(JSON.stringify(helloMessage));
 }
 
+// Function to process the server message
 function processServerMessage(message, dhtTable) {
     try {
         const parsedMessage = JSON.parse(message);
@@ -75,6 +91,7 @@ function processServerMessage(message, dhtTable) {
     }
 }
 
+// Function to format the DHT table
 function formatDHTTable(dhtTable) {
     const formattedDHT = dhtTable.map((bucket, index) => {
         if (bucket.length === 0) {
@@ -91,9 +108,9 @@ function formatDHTTable(dhtTable) {
     }
 }
 
-
-
+// Function to refresh the buckets
 function refreshBuckets(dhtTable, peerID) {
+    // Push the joining peer into the correct bucket
     pushBucket(dhtTable, {
         ip: '127.0.0.1',
         port: 4897,
@@ -101,13 +118,13 @@ function refreshBuckets(dhtTable, peerID) {
     });
 }
 
-
 // Function to initialize the client
-function initializeClient(argv) {
+async function initializeClient(argv) {
+    const randomPort = await getRandomPort();
     const serverArg = argv.p;
     if (serverArg) {
         const [serverIP, serverPort] = serverArg.split(':');
-        const clientID = getPeerID('127.0.0.1', 5000);
+        const clientID = getPeerID('127.0.0.1', randomPort);
         const dhtTable = Array.from({length: K_BUCKET_COUNT}, () => []);
         connectToServer(serverIP, serverPort, clientID, dhtTable, argv);
     } else {

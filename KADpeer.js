@@ -9,9 +9,9 @@ const K_BUCKET_SIZE = 1;
 const K_BUCKET_COUNT = 32;
 
 // Determine if running in server mode or client mode
-const isServerMode = !argv.p; // If -p (port) argument is not provided, assume server mode
+const isServerMode = !argv.p;
 
-// Function to calculate the common prefix length between two IDs
+// Function to calculate the common prefix length between two IDs for bucket index
 function calculateCommonPrefixLength(id1, id2) {
     //console.log("ID1:", id1);
     //console.log("ID2:", id2);
@@ -30,23 +30,27 @@ function calculateCommonPrefixLength(id1, id2) {
     return commonPrefixLength;
 }
 
+// Function to push the joining peer into the correct bucket
 function pushBucket(dhtTable, peer) {
     const ownerID = Singleton.getServerID('127.0.0.1', 4897);
     const bucketIndex = calculateCommonPrefixLength(ownerID, peer.id);
 
+    // If the bucket is empty, add the peer
     if (dhtTable[bucketIndex].length < K_BUCKET_SIZE) {
         dhtTable[bucketIndex].push(peer);
         console.log(`\nConnected from peer ${peer.ip}:${peer.port}\n`);
         console.log(`Bucket P${bucketIndex} has no value, adding ${peer.id} `);
-    } else {
+    } else { // If the bucket is full, compare the distance of the new peer to the existing peer
         const existingPeer = dhtTable[bucketIndex][0];
+        //console.log("existing peer: ", existingPeer);
         const distanceToPeer = Singleton.XORing(peer.id, ownerID);
         const distanceToExistingPeer = Singleton.XORing(existingPeer.id, ownerID);
 
+        // If the new peer is closer to the owner, add it to the bucket
         if (distanceToPeer < distanceToExistingPeer) {
-            console.log(`Peer ${peer.name} added to bucket ${bucketIndex} because it is closer to owner.`);
-        } else {
-            console.log(`Peer ${existingPeer.name} kept in bucket ${bucketIndex} because it is closer to owner.`);
+            console.log(`Peer ${peer.id} added to bucket ${bucketIndex} because it is closer to owner.`);
+        } else { // If the existing peer is closer to the owner, keep it in the bucket
+            console.log(`Peer ${existingPeer.id} kept in bucket ${bucketIndex} because it is closer to owner.`);
         }
     }
 
@@ -75,17 +79,20 @@ function formatDHTTable(dhtTable) {
     return formattedEntries.join(", ");
 }
 
+// Function to handle the joining peer
 function handleClientJoining(socket, dhtTable) {
     socket.once('data', (data) => {
         const message = data.toString();
         const parsedMessage = JSON.parse(message);
         const clientID = Singleton.getPeerID('127.0.0.1', 5000);
-        const bucketIndex = calculateCommonPrefixLength(clientID, parsedMessage.clientID);
 
+        // Calculate the common prefix length between the joining peer and the server
+        const bucketIndex = calculateCommonPrefixLength(clientID, parsedMessage.clientID);
 
         console.log(`Received Hello Message from ${parsedMessage.peerName} ${parsedMessage.clientID} along with DHT:`);
         console.log(formatDHTTable(parsedMessage.dht));
 
+        // Send the welcome message to the joining peer
         const welcomeMessage = {
             V: 9,
             messageType: 1,
@@ -105,8 +112,7 @@ function handleClientJoining(socket, dhtTable) {
             id: parsedMessage.clientID
         });
 
-        // Access the bucket index and peer ID from peerInfo and send it to the client
-        // Send the DHT update message with the correct messageType
+        // Send the DHT update message to the joining peer
         const dhtUpdateMessage = {
             messageType: 2,
             senderName: clientID,
