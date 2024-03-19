@@ -3,6 +3,7 @@ const { parse } = require('yargs');
 const Singleton = require('./Singleton.js');
 const { getServerID } = require('./Singleton.js');
 
+Singleton.init();
 
 const argv = parse(process.argv.slice(2));
 const K_BUCKET_SIZE = 1;
