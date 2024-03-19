@@ -46,30 +46,24 @@ function connectToServer(serverIP, serverPort, clientID, dhtTable) {
 
 // Function to send a hello message to the server
 function sendHello(client, dhtTable) {
-    const peerID = getPeerID('127.0.0.1', 5000);
     const helloMessage = {
         messageType: 2,
-        clientID: peerID,
+        clientID: getPeerID('127.0.0.1', 5000),
         dht: dhtTable
     };
     client.write(JSON.stringify(helloMessage));
 }
 
 function processServerMessage(message, dhtTable) {
-    const peerID = getPeerID('127.0.0.1', 5000);
     try {
         const parsedMessage = JSON.parse(message);
         switch (parsedMessage.messageType) {
             case 1: // Welcome message
                 console.log(`Received Welcome Message from server ${parsedMessage.senderName} along with DHT:`);
                 console.log(formatDHTTable(parsedMessage.peerTable));
-
                 break;
             case 2: // DHT update
-                refreshBuckets(dhtTable, peerID);
-
-                //formatDHT(parsedMessage.update);
-
+                refreshBuckets(dhtTable, parsedMessage.update.peerInfo.id);
                 break;
             default:
                 console.log('Unknown message type received.');
@@ -96,19 +90,15 @@ function formatDHTTable(dhtTable) {
 }
 
 
-// Function to format and print the DHT update message
-// function formatDHT(dht) {
-//     console.log(`[P${dht.update.peerInfo.bucketIndex}, ${dht.update.peerInfo.ip}:${dht.update.peerInfo.port}, ${dht.update.peerInfo.id}]`);
-// }
-
 
 function refreshBuckets(dhtTable, peerID) {
-    console.log("peerID in refresh buckets: " + peerID);
-    console.log("dht table in refresh buckets: "+dhtTable);
-    pushBucket(dhtTable, peerID);
-    console.log('\nRefresh k-Bucket operation is performed.');
-    console.log(dhtTable);
+    pushBucket(dhtTable, {
+        ip: '127.0.0.1',
+        port: 4897,
+        id: peerID
+    });
 }
+
 
 // Function to initialize the client
 function initializeClient() {

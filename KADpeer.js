@@ -1,5 +1,5 @@
 const net = require('net');
-const {parse} = require('yargs');
+const { parse } = require('yargs');
 const Singleton = require('./Singleton.js');
 const { getServerID } = require('./Singleton.js');
 
@@ -7,13 +7,15 @@ const argv = parse(process.argv.slice(2));
 const K_BUCKET_SIZE = 1;
 const K_BUCKET_COUNT = 32;
 
+// Determine if running in server mode or client mode
+const isServerMode = !argv.p; // If -p (port) argument is not provided, assume server mode
+
 // Function to calculate the common prefix length between two IDs
 function calculateCommonPrefixLength(id1, id2) {
-    console.log("ID1:", id1);
-    console.log("ID2:", id2);
+    //console.log("ID1:", id1);
+    //console.log("ID2:", id2);
     const binaryId1 = Singleton.Hex2Bin(id1);
     const binaryId2 = Singleton.Hex2Bin(id2);
-
 
     let commonPrefixLength = 0;
 
@@ -27,10 +29,8 @@ function calculateCommonPrefixLength(id1, id2) {
     return commonPrefixLength;
 }
 
-
-
 function pushBucket(dhtTable, peer) {
-    const ownerID = getServerID('127.0.0.1', 4897);
+    const ownerID = Singleton.getServerID('127.0.0.1', 4897);
     const bucketIndex = calculateCommonPrefixLength(ownerID, peer.id);
 
     if (dhtTable[bucketIndex].length < K_BUCKET_SIZE) {
@@ -57,7 +57,8 @@ function pushBucket(dhtTable, peer) {
 }
 
 module.exports = {
-    pushBucket
+    pushBucket,
+    calculateCommonPrefixLength
 };
 
 // Function to format DHT table entries
@@ -78,14 +79,14 @@ function handleClientJoining(socket, dhtTable) {
     socket.once('data', (data) => {
         const message = data.toString();
         const parsedMessage = JSON.parse(message);
-        const serverID = getServerID('127.0.0.1', 4897);
-        const bucketIndex = calculateCommonPrefixLength(serverID, parsedMessage.clientID);
+        const clientID = Singleton.getPeerID('127.0.0.1', 5000);
+        const bucketIndex = calculateCommonPrefixLength(clientID, parsedMessage.clientID);
         const welcomeMessage = {
             V: 9,
             messageType: 1,
             numberOfPeers: dhtTable.length,
             senderNameLength: 0,
-            senderName: serverID,
+            senderName: clientID,
             peerTable: dhtTable,
             bucketIndex: bucketIndex
         };
@@ -97,19 +98,19 @@ function handleClientJoining(socket, dhtTable) {
             ip: socket.remoteAddress,
             port: socket.remotePort,
             id: parsedMessage.clientID
-        }, bucketIndex);
+        });
 
         // Access the bucket index and peer ID from peerInfo and send it to the client
         // Send the DHT update message with the correct messageType
         const dhtUpdateMessage = {
             messageType: 2,
-            senderName: serverID,
+            senderName: clientID,
             update: {
                 bucketIndex: peerInfo.bucketIndex,
                 peerInfo: {
                     ip: '127.0.0.1',
                     port: 4897,
-                    id: serverID
+                    id: clientID
                 }
             }
         };
@@ -126,17 +127,12 @@ function handleClientJoining(socket, dhtTable) {
     });
 }
 
-
-
-
-
-
 const clients = [];
 
 // Function to initialize the server
 function initializeServer(peerName) {
     const serverID = getServerID('127.0.0.1', 4897);
-    const dhtTable = Array.from({length: K_BUCKET_COUNT}, () => []);
+    const dhtTable = Array.from({ length: K_BUCKET_COUNT }, () => []);
     const server = net.createServer();
 
     server.on('connection', (socket) => {
@@ -145,9 +141,11 @@ function initializeServer(peerName) {
     });
 
     server.on('listening', () => {
-        const address = server.address();
-        const serverAddress = `${address.address}:${address.port}`;
-        console.log(`This peer address is ${serverAddress} located at ${peerName} [${serverID}]`);
+        if (isServerMode) {
+            const address = server.address();
+            const serverAddress = `${address.address}:${address.port}`;
+            console.log(`This peer address is ${serverAddress} located at ${peerName} [${serverID}]`);
+        }
     });
 
     server.on('error', (err) => {
@@ -156,9 +154,7 @@ function initializeServer(peerName) {
 
     server.listen(0, '127.0.0.1', () => {
     });
-
 }
 
 const peerName = argv.n || 'server';
 initializeServer(peerName);
-

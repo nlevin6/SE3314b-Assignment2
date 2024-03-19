@@ -34,9 +34,21 @@ module.exports = {
     },
     
     //--------------------------
-    //getPeerID: takes the IP and port number and returns 4 bytes Hex number
+    //getServerID: takes the IP and port number and returns 4 bytes Hex number
     //--------------------------
     getServerID: function(IP, port) {
+        const inputString = `${IP}:${port}`;
+        const hash = crypto.createHash('sha256');
+        hash.update(inputString);
+        const hashBuffer = hash.digest();
+        const peerID = hashBuffer.readUInt32LE(0);
+        return peerID.toString(16).padStart(8, '0');
+    },
+
+    //--------------------------
+    //getPeerID: takes the IP and port number and returns 4 bytes Hex number
+    //--------------------------
+    getPeerID: function(IP, port) {
         const inputString = `${IP}:${port}`;
         const hash = crypto.createHash('sha256');
         hash.update(inputString);
