@@ -18,13 +18,14 @@ function getPeerID(ip, port) {
 }
 
 // Function to connect to the known peer (server)
-function connectToServer(serverIP, serverPort, clientID, dhtTable) {
+function connectToServer(serverIP, serverPort, clientID, dhtTable, argv) {
     const client = new net.Socket();
     client.connect(serverPort, serverIP, () => {
         console.log(`Connected to peer1:${serverPort} at timestamp: ${Singleton.getTimestamp()}\n`);
         const address = client.address();
         console.log(`This peer is ${address.address}:${address.port} located at peer2 [${clientID}]\n`);
-        sendHello(client, dhtTable);
+        const peerName = argv.n || 'peer';
+        sendHello(client, dhtTable, peerName);
     });
 
     client.on('connect', () => {
@@ -45,10 +46,11 @@ function connectToServer(serverIP, serverPort, clientID, dhtTable) {
 }
 
 // Function to send a hello message to the server
-function sendHello(client, dhtTable) {
+function sendHello(client, dhtTable, peerName) {
     const helloMessage = {
         messageType: 2,
         clientID: getPeerID('127.0.0.1', 5000),
+        peerName: peerName,
         dht: dhtTable
     };
     client.write(JSON.stringify(helloMessage));
@@ -101,17 +103,16 @@ function refreshBuckets(dhtTable, peerID) {
 
 
 // Function to initialize the client
-function initializeClient() {
-    const argv = parse();
+function initializeClient(argv) {
     const serverArg = argv.p;
     if (serverArg) {
         const [serverIP, serverPort] = serverArg.split(':');
         const clientID = getPeerID('127.0.0.1', 5000);
         const dhtTable = Array.from({length: K_BUCKET_COUNT}, () => []);
-        connectToServer(serverIP, serverPort, clientID, dhtTable);
+        connectToServer(serverIP, serverPort, clientID, dhtTable, argv);
     } else {
         console.error('Error: -p option with server IP address and port number is required.');
     }
 }
 
-initializeClient();
+initializeClient(parse());

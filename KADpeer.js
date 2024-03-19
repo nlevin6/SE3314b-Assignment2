@@ -3,6 +3,7 @@ const { parse } = require('yargs');
 const Singleton = require('./Singleton.js');
 const { getServerID } = require('./Singleton.js');
 
+
 const argv = parse(process.argv.slice(2));
 const K_BUCKET_SIZE = 1;
 const K_BUCKET_COUNT = 32;
@@ -57,8 +58,7 @@ function pushBucket(dhtTable, peer) {
 }
 
 module.exports = {
-    pushBucket,
-    calculateCommonPrefixLength
+    pushBucket
 };
 
 // Function to format DHT table entries
@@ -81,6 +81,11 @@ function handleClientJoining(socket, dhtTable) {
         const parsedMessage = JSON.parse(message);
         const clientID = Singleton.getPeerID('127.0.0.1', 5000);
         const bucketIndex = calculateCommonPrefixLength(clientID, parsedMessage.clientID);
+
+
+        console.log(`Received Hello Message from ${parsedMessage.peerName} ${parsedMessage.clientID} along with DHT:`);
+        console.log(formatDHTTable(parsedMessage.dht));
+
         const welcomeMessage = {
             V: 9,
             messageType: 1,
